@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bail.lspfrifa.data.AddedProject
@@ -35,16 +36,11 @@ import com.bail.lspfrifa.ui.component.MiuixPageBackground
 import com.bail.lspfrifa.ui.component.UiTokens
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/**
- * 项目主页面（仅展示用户已添加项目）。
- * 空态 → 提示点击右下角添加；FAB → 导航到选择页（严禁 Dialog）。
- */
 @Composable
 fun ProjectScreenV2(
     projects: List<AddedProject>,
@@ -77,7 +73,7 @@ fun ProjectScreenV2(
                     Text("暂无项目", fontSize = UiTokens.TitleSize, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "点击右下角 + 按钮添加应用",
+                        "添加应用后，可在这里管理脚本和日志",
                         fontSize = UiTokens.SubtitleSize,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
@@ -100,15 +96,11 @@ fun ProjectScreenV2(
                 }
             }
 
-            // 右下角悬浮 + FAB（官方 FloatingActionButton，导航到「选择项目」全屏页）
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(20.dp),
-            ) {
-                FloatingActionButton(onClick = onNavigateToSelect) {
-                    Text("＋", fontSize = 24.sp, color = MiuixTheme.colorScheme.onPrimary)
-                }
+            if (projects.isNotEmpty()) {
+                Button(
+                    onClick = onNavigateToSelect,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                ) { Text("添加项目") }
             }
         }
     }
@@ -134,16 +126,17 @@ private fun ProjectCardV2(
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AppIconImage(icon, Modifier.size(52.dp))
-                Spacer(Modifier.width(14.dp))
+                AppIconImage(icon, Modifier.size(40.dp))
+                Spacer(Modifier.width(12.dp))
                 Column {
-                    Text(project.appName, fontSize = UiTokens.TitleSize, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(project.appName, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         project.packageName,
                         fontSize = 12.sp,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

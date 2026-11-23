@@ -17,12 +17,21 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: false
       - uses: android-actions/setup-android@v3
         with:
           packages: ''
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-37.0' 'build-tools;35.0.1' 'cmake;3.22.1' 'ndk;28.2.13676358'
+      - uses: actions/cache@v4
+        id: gumjs
+        with:
+          path: app/src/main/cpp/frida-gumjs-devkit/arm64-v8a
+          key: gumjs-17.9.3-android-arm64-v1
       - name: Prepare GumJS
+        if: steps.gumjs.outputs.cache-hit != 'true'
         run: |
           devkit=app/src/main/cpp/frida-gumjs-devkit/arm64-v8a
           mkdir -p "$devkit"
@@ -32,7 +41,7 @@ jobs:
       - name: Assemble Release
         run: |
           sed -i '/^android\.aapt2FromMavenOverride=/d' gradle.properties
-          bash gradlew --no-daemon :app:assembleRelease
+          bash gradlew --build-cache :app:assembleRelease
       - name: Sign and verify Release
         run: |
           tools="$ANDROID_HOME/build-tools/35.0.1"
@@ -50,3 +59,4 @@ jobs:
           name: LSPFRIDA-release-arm64-v8a
           path: LSPFRIDA-release-arm64-v8a.apk
           if-no-files-found: error
+          compression-level: 1
