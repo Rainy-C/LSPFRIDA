@@ -29,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -143,7 +142,17 @@ fun LogScreenV1(
     packageName: String,
     onBack: () -> Unit,
 ) {
-    val logs = remember { mutableStateListOf<String>() }
+    var logs by remember(packageName) { mutableStateOf(emptyList<String>()) }
+    var logRevision by remember(packageName) { mutableStateOf(0L) }
+    fun appendLogs(lines: List<String>) {
+        if (lines.isEmpty()) return
+        logs = if (lines.size >= MAX_LOG_LINES) {
+            lines.takeLast(MAX_LOG_LINES)
+        } else {
+            logs.takeLast(MAX_LOG_LINES - lines.size) + lines
+        }
+        logRevision++
+    }
     val scope = rememberCoroutineScope()
     // P0-2：入站日志批量缓冲（普通 ArrayList，非 Compose state —— 追加不触发重组）。
     // 回调线程可能不是主线程，故全部访问走 synchronized；state 写入统一由 flush 协程
@@ -174,21 +183,7 @@ fun LogScreenV1(
             val history = LogStore.readHistory(packageName, MAX_LOG_LINES)
             withContext(Dispatchers.Main) {
                 if (disposed) return@withContext
-                logs.addAll(history)
-                // P0-2：合并"历史读取期间已缓冲的实时行"——否则它们会被后续 flush 追加，
-                // 但顺序上应位于历史之后（若 flush 先跑过，此处取到空，同样正确）。
-                val early = synchronized(pending) {
-                    if (pending.isEmpty()) null else ArrayList(pending).also { pending.clear() }
-                }
-                if (early != null) logs.addAll(early)
-                // P0-2：一次性裁剪（原 while + removeAt(0) = n 次 O(n) 搬移 + n 次重组）。
-                // 用 toList/clear/addAll 三个基本成员（不用 removeRange 扩展——其在本
-                // SnapshotStateList 上的行为未经本地验证，按"静态双绿≠可编译"教训取保守写法）。
-                if (logs.size > MAX_LOG_LINES) {
-                    val kept = logs.toList().takeLast(MAX_LOG_LINES)
-                    logs.clear()
-                    logs.addAll(kept)
-                }
+                if (!cleared) appendLogs(history)
                 unsubscribe = IpcManager.addLogListener { target, message ->
                     if (target == packageName) {
                         lastLiveAtRef.set(System.currentTimeMillis())
@@ -221,15 +216,7 @@ fun LogScreenV1(
             val batch = synchronized(pending) {
                 if (pending.isEmpty()) null else ArrayList(pending).also { pending.clear() }
             }
-            if (batch != null) {
-                logs.addAll(batch)
-                // P0-2：一次性裁剪（O(n) 一次，替代每条一次 removeAt(0)）；同上的保守 API 选择。
-                if (logs.size > MAX_LOG_LINES) {
-                    val kept = logs.toList().takeLast(MAX_LOG_LINES)
-                    logs.clear()
-                    logs.addAll(kept)
-                }
-            }
+            if (batch != null) appendLogs(batch)
             val live = lastLiveAtRef.get()
             if (live != lastLiveAt) lastLiveAt = live
         }
@@ -247,9 +234,13 @@ fun LogScreenV1(
             if (sig != null && sig == lastSig) continue
             lastSig = sig
             val h = withContext(Dispatchers.IO) { LogStore.readHistory(packageName, MAX_LOG_LINES) }
-            if (h.size > logs.size && h.isNotEmpty() && logs.isNotEmpty() && h[h.size - 1] != logs[logs.size - 1]) {
-                val start = h.indexOf(logs[logs.size - 1])
-                if (start >= 0) logs.addAll(h.subList(start + 1, h.size))
+            if (cleared) continue
+            val tail = logs.lastOrNull()
+            if (tail == null) {
+                appendLogs(h)
+            } else if (h.lastOrNull() != tail) {
+                val start = h.lastIndexOf(tail)
+                if (start >= 0) appendLogs(h.subList(start + 1, h.size))
             }
         }
     }
@@ -276,7 +267,7 @@ fun LogScreenV1(
     LaunchedEffect(dragged) {
         if (dragged) pinnedToBottom = false
     }
-    LaunchedEffect(logs.size) {
+    LaunchedEffect(logRevision) {
         if (pinnedToBottom && logs.isNotEmpty()) {
             // P0-2：瞬时定位替代 animateScrollToItem —— 高频追加时动画会被每批 flush
             // 反复取消/重启，既浪费帧又永远追不上；追尾语义下瞬时定位更正确。
@@ -293,7 +284,7 @@ fun LogScreenV1(
     // 旧实现只清 logs+cleared 标志，文件保留，重进 DisposableEffect readHistory 又灌回）
     // （captain 修复保留：显式 () -> Unit——避免 lambda 末表达式被推断为 Job 导致 IconButton onClick 编译失败）
     val onClear: () -> Unit = {
-        logs.clear()
+        logs = emptyList()
         cleared = true
         // 页面作用域无关执行（LogStore 内 App 级 IO scope）：清除后立即返回/销毁也不取消真清除
         LogStore.clearAsync(packageName)
