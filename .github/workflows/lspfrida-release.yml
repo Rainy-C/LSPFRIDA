@@ -30,7 +30,9 @@ jobs:
           tar -xJf "$RUNNER_TEMP/gumjs.tar.xz" -C "$devkit"
           test -s "$devkit/libfrida-gumjs.a"
       - name: Assemble Release
-        run: bash gradlew --no-daemon :app:assembleRelease
+        run: |
+          sed -i '/^android\.aapt2FromMavenOverride=/d' gradle.properties
+          bash gradlew --no-daemon :app:assembleRelease
       - name: Sign and verify Release
         run: |
           tools="$ANDROID_HOME/build-tools/35.0.1"
